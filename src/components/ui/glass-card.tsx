@@ -12,9 +12,9 @@ type GlassCardProps = {
 };
 
 const glowClasses: Record<NonNullable<GlassCardProps["glow"]>, string> = {
-  blue: "hover:shadow-[0_0_40px_rgba(41,151,255,0.24)]",
-  purple: "hover:shadow-[0_0_40px_rgba(191,90,242,0.24)]",
-  teal: "hover:shadow-[0_0_40px_rgba(45,212,191,0.24)]",
+  blue: "hover:shadow-[0_0_40px_rgba(123,57,252,0.28)]",
+  purple: "hover:shadow-[0_0_40px_rgba(248,123,82,0.24)]",
+  teal: "hover:shadow-[0_0_40px_rgba(151,89,255,0.26)]",
 };
 
 export function GlassCard({ children, className, hover = false, glow }: GlassCardProps) {

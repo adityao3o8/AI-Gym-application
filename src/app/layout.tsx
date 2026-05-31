@@ -1,5 +1,12 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import {
+  Cabin,
+  Geist,
+  Geist_Mono,
+  Instrument_Serif,
+  Inter,
+  Manrope,
+} from "next/font/google";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -12,13 +19,38 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const inter = Inter({
+  variable: "--font-inter",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+const manrope = Manrope({
+  variable: "--font-manrope",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+const cabin = Cabin({
+  variable: "--font-cabin",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+const instrumentSerif = Instrument_Serif({
+  variable: "--font-instrument-serif",
+  subsets: ["latin"],
+  weight: "400",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: {
-    default: "GYMERS",
+    default: "GYMERS — Your Workouts. One Intelligent Coach.",
     template: "%s | GYMERS",
   },
   description:
-    "Modern fitness platform for gym members and owners — track workouts, streaks, and gym analytics.",
+    "GYMERS is the AI workout platform that tracks every rep, grades your form, and pushes you toward your next PR — built for the way you actually train.",
 };
 
 export default function RootLayout({
@@ -29,7 +61,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} dark h-full`}
+      className={`${geistSans.variable} ${geistMono.variable} ${inter.variable} ${manrope.variable} ${cabin.variable} ${instrumentSerif.variable} dark h-full`}
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>

@@ -21,7 +21,7 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
 
   return (
-    <nav className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-1">
+    <nav className="font-inter flex items-center gap-0.5 rounded-full glass-pill px-1.5 py-1.5">
       {allNav.map((item) => {
         const isActive =
           pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -32,16 +32,13 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
             href={item.href}
             onClick={onNavigate}
             className={cn(
-              "relative rounded-lg px-3 py-2 text-sm font-medium text-white/70 transition-colors hover:text-white",
+              "relative rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
               isActive
-                ? "text-white"
-                : "hover:bg-white/5"
+                ? "bg-white/10 text-white"
+                : "text-white/65 hover:bg-white/8 hover:text-white"
             )}
           >
             {item.label}
-            {isActive ? (
-              <span className="absolute -bottom-1 left-1/2 size-1.5 -translate-x-1/2 rounded-full bg-white" />
-            ) : null}
           </Link>
         );
       })}
@@ -76,12 +73,15 @@ export function Navbar({ isAuthenticated, signOutAction }: NavbarProps) {
     <>
       <motion.header
         style={{ backgroundColor: navBackground }}
-        className="fixed left-1/2 top-4 z-50 w-[min(96vw,74rem)] -translate-x-1/2 rounded-full border border-white/10 px-4 py-3 shadow-[0_20px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl"
+        className="fixed left-1/2 top-4 z-50 w-[min(96vw,74rem)] -translate-x-1/2 rounded-full border border-white/10 px-4 py-2.5 shadow-[0_20px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl"
       >
         <div className="mx-auto flex items-center justify-between gap-3">
-        <Link href="/" className="flex shrink-0 items-center gap-2 font-semibold tracking-tight">
-          <span className="flex size-9 items-center justify-center rounded-lg bg-white/10 text-white">
-            <Dumbbell className="size-5" />
+        <Link
+          href="/"
+          className="font-manrope flex shrink-0 items-center gap-2 text-lg font-semibold tracking-tight"
+        >
+          <span className="relative grid size-8 place-items-center rounded-lg bg-gradient-to-br from-[#7b39fc] to-[#9759ff] shadow-[0_0_20px_rgba(123,57,252,0.55)]">
+            <Dumbbell className="size-4 text-white" />
           </span>
           <span className="hidden text-white sm:inline">{APP_NAME}</span>
         </Link>
@@ -97,12 +97,17 @@ export function Navbar({ isAuthenticated, signOutAction }: NavbarProps) {
                 <Link
                   href="/profile"
                   aria-label="Profile"
-                  className="inline-flex size-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/90 transition hover:bg-white/10"
+                  className="inline-flex size-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/90 transition hover:bg-white/10 hover:text-white"
                 >
                   <UserIcon className="size-4" />
                 </Link>
                 <form action={signOutAction}>
-                  <Button type="submit" variant="ghost" size="sm" className="text-white/90">
+                  <Button
+                    type="submit"
+                    variant="ghost"
+                    size="sm"
+                    className="font-inter rounded-full text-white/85"
+                  >
                     Log out
                   </Button>
                 </form>
@@ -112,12 +117,17 @@ export function Navbar({ isAuthenticated, signOutAction }: NavbarProps) {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="text-white/90"
+                  className="font-inter rounded-full text-white/85"
                   render={<Link href="/login" />}
                 >
                   Log in
                 </Button>
-                <Button variant="primary" size="sm" render={<Link href="/signup" />}>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  className="font-inter rounded-full"
+                  render={<Link href="/signup" />}
+                >
                   Sign up
                 </Button>
               </>
