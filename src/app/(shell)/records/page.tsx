@@ -51,7 +51,9 @@ export default async function RecordsPage() {
       const ownerId = Array.isArray(w) ? w[0]?.user_id : w.user_id;
       return ownerId === user?.id;
     })
-    .filter((r): r is EntryRow & { weight_kg: number } => r.weight_kg !== null);
+    .filter((r) => r.weight_kg !== null) as Array<
+      EntryRow & { weight_kg: number }
+    >;
 
   const map = new Map<string, PR>();
   for (const r of filtered) {

@@ -5,7 +5,6 @@ import { motion } from "framer-motion";
 import {
   Award,
   Brain,
-  CalendarDays,
   Dumbbell,
   Plus,
   Trophy,
@@ -28,7 +27,9 @@ type DashboardClientProps = {
     streak: number;
     trophies: number;
     thisWeek: number;
+    gymCred: number;
   };
+  partner: { name: string; streak: number } | null;
   recent: Array<{
     id: string;
     title: string;
@@ -71,21 +72,17 @@ function formatDate(iso: string) {
 export function DashboardClient({
   firstName,
   stats,
+  partner,
   recent,
   weekly,
 }: DashboardClientProps) {
   const streak = useCountUp(stats.streak);
 
   const cards = [
+    { label: "Gym Cred", value: stats.gymCred, icon: Award, glow: "purple" as const },
     { label: "Workouts", value: stats.workouts, icon: Dumbbell, glow: "blue" as const },
     { label: "Streak (days)", value: stats.streak, icon: Zap, glow: "purple" as const },
     { label: "Trophies", value: stats.trophies, icon: Trophy, glow: "teal" as const },
-    {
-      label: "This week",
-      value: stats.thisWeek,
-      icon: CalendarDays,
-      glow: "blue" as const,
-    },
   ];
 
   return (
@@ -106,7 +103,42 @@ export function DashboardClient({
             ? `You are on a ${streak}-day consistency streak. Keep it going.`
             : "Log your first workout to start a streak."}
         </p>
+        {partner && (
+          <p className="mt-2 text-sm text-white/50">
+            Partner {partner.name}: {partner.streak}-day streak ·{" "}
+            <Link href="/profile" className="text-apple-blue hover:underline">
+              accountability
+            </Link>
+          </p>
+        )}
       </motion.section>
+
+      <section className="relative z-10 mb-4 flex flex-wrap gap-2">
+        <Link
+          href="/check-in"
+          className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80 hover:bg-white/10"
+        >
+          Check-in
+        </Link>
+        <Link
+          href="/community"
+          className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80 hover:bg-white/10"
+        >
+          Community
+        </Link>
+        <Link
+          href="/season"
+          className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80 hover:bg-white/10"
+        >
+          Season
+        </Link>
+        <Link
+          href="/equipment"
+          className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80 hover:bg-white/10"
+        >
+          Equipment
+        </Link>
+      </section>
 
       <section className="relative z-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {cards.map((stat, index) => (

@@ -19,6 +19,9 @@ export type Database = {
           address: string | null;
           phone: string | null;
           owner_id: string | null;
+          logo_url: string | null;
+          primary_color: string | null;
+          check_in_code: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -29,6 +32,9 @@ export type Database = {
           address?: string | null;
           phone?: string | null;
           owner_id?: string | null;
+          logo_url?: string | null;
+          primary_color?: string | null;
+          check_in_code?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -39,6 +45,9 @@ export type Database = {
           address?: string | null;
           phone?: string | null;
           owner_id?: string | null;
+          logo_url?: string | null;
+          primary_color?: string | null;
+          check_in_code?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -62,6 +71,12 @@ export type Database = {
           gym_id: string | null;
           streak_count: number;
           last_workout_at: string | null;
+          injury_flags: string[];
+          rest_tokens: number;
+          gym_cred: number;
+          season_xp: number;
+          division: string;
+          accountability_partner_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -74,6 +89,12 @@ export type Database = {
           gym_id?: string | null;
           streak_count?: number;
           last_workout_at?: string | null;
+          injury_flags?: string[];
+          rest_tokens?: number;
+          gym_cred?: number;
+          season_xp?: number;
+          division?: string;
+          accountability_partner_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -86,6 +107,12 @@ export type Database = {
           gym_id?: string | null;
           streak_count?: number;
           last_workout_at?: string | null;
+          injury_flags?: string[];
+          rest_tokens?: number;
+          gym_cred?: number;
+          season_xp?: number;
+          division?: string;
+          accountability_partner_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -114,6 +141,10 @@ export type Database = {
           title: string;
           notes: string | null;
           performed_at: string;
+          form_score: number | null;
+          reps_detected: number | null;
+          exercise_detected: string | null;
+          source: string;
           created_at: string;
           updated_at: string;
         };
@@ -124,6 +155,10 @@ export type Database = {
           title?: string;
           notes?: string | null;
           performed_at?: string;
+          form_score?: number | null;
+          reps_detected?: number | null;
+          exercise_detected?: string | null;
+          source?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -134,6 +169,10 @@ export type Database = {
           title?: string;
           notes?: string | null;
           performed_at?: string;
+          form_score?: number | null;
+          reps_detected?: number | null;
+          exercise_detected?: string | null;
+          source?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -302,6 +341,243 @@ export type Database = {
             referencedColumns: ["id"];
           },
         ];
+      };
+      seasons: {
+        Row: {
+          id: string;
+          name: string;
+          starts_at: string;
+          ends_at: string;
+          is_active: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          starts_at: string;
+          ends_at: string;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          starts_at?: string;
+          ends_at?: string;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      gym_challenges: {
+        Row: {
+          id: string;
+          gym_id: string;
+          created_by: string;
+          title: string;
+          description: string | null;
+          challenge_type: string;
+          target_value: number;
+          starts_at: string;
+          ends_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          gym_id: string;
+          created_by: string;
+          title: string;
+          description?: string | null;
+          challenge_type?: string;
+          target_value?: number;
+          starts_at?: string;
+          ends_at: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          gym_id?: string;
+          created_by?: string;
+          title?: string;
+          description?: string | null;
+          challenge_type?: string;
+          target_value?: number;
+          starts_at?: string;
+          ends_at?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      challenge_participants: {
+        Row: {
+          id: string;
+          challenge_id: string;
+          user_id: string;
+          progress: number;
+          completed_at: string | null;
+          joined_at: string;
+        };
+        Insert: {
+          id?: string;
+          challenge_id: string;
+          user_id: string;
+          progress?: number;
+          completed_at?: string | null;
+          joined_at?: string;
+        };
+        Update: {
+          id?: string;
+          challenge_id?: string;
+          user_id?: string;
+          progress?: number;
+          completed_at?: string | null;
+          joined_at?: string;
+        };
+        Relationships: [];
+      };
+      gym_feed_posts: {
+        Row: {
+          id: string;
+          gym_id: string;
+          user_id: string;
+          body: string;
+          post_type: string;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          gym_id: string;
+          user_id: string;
+          body: string;
+          post_type?: string;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          gym_id?: string;
+          user_id?: string;
+          body?: string;
+          post_type?: string;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      gym_hall_of_fame: {
+        Row: {
+          id: string;
+          gym_id: string;
+          user_id: string;
+          exercise_name: string;
+          weight_kg: number;
+          reps: number;
+          achieved_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          gym_id: string;
+          user_id: string;
+          exercise_name: string;
+          weight_kg: number;
+          reps?: number;
+          achieved_at?: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          gym_id?: string;
+          user_id?: string;
+          exercise_name?: string;
+          weight_kg?: number;
+          reps?: number;
+          achieved_at?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      gym_equipment: {
+        Row: {
+          id: string;
+          gym_id: string;
+          name: string;
+          zone: string;
+          capacity: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          gym_id: string;
+          name: string;
+          zone?: string;
+          capacity?: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          gym_id?: string;
+          name?: string;
+          zone?: string;
+          capacity?: number;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      equipment_usage: {
+        Row: {
+          id: string;
+          equipment_id: string;
+          user_id: string;
+          started_at: string;
+          ended_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          equipment_id: string;
+          user_id: string;
+          started_at?: string;
+          ended_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          equipment_id?: string;
+          user_id?: string;
+          started_at?: string;
+          ended_at?: string | null;
+        };
+        Relationships: [];
+      };
+      ghost_sessions: {
+        Row: {
+          id: string;
+          user_id: string;
+          exercise: string;
+          reps: number;
+          form_score: number | null;
+          metrics: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          exercise: string;
+          reps?: number;
+          form_score?: number | null;
+          metrics?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          exercise?: string;
+          reps?: number;
+          form_score?: number | null;
+          metrics?: Json;
+          created_at?: string;
+        };
+        Relationships: [];
       };
     };
     Views: Record<string, never>;

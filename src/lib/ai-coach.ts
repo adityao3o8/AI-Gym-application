@@ -189,7 +189,10 @@ function recentWeight(entries: CoachEntry[], exercise: string): number | null {
   return matches[0]?.weight_kg ?? null;
 }
 
-export function generatePlan(entries: CoachEntry[]): CoachPlan {
+export function generatePlan(
+  entries: CoachEntry[],
+  options?: { avoidExercises?: string[] }
+): CoachPlan {
   if (entries.length === 0) {
     const starter = CATALOG.filter((e) => e.group === "push").slice(0, 5);
     return {
@@ -208,8 +211,16 @@ export function generatePlan(entries: CoachEntry[]): CoachPlan {
     };
   }
 
+  const avoid = new Set(
+    (options?.avoidExercises ?? []).map((n) => n.toLowerCase())
+  );
+
   const focus = pickFocus(entries);
-  const pool = CATALOG.filter((e) => e.group === focus);
+  const pool = CATALOG.filter(
+    (e) => e.group === focus && !avoid.has(e.name.toLowerCase())
+  );
+  const fallbackPool = CATALOG.filter((e) => !avoid.has(e.name.toLowerCase()));
+  const usePool = pool.length >= 3 ? pool : fallbackPool.filter((e) => e.group === focus);
   const trained = new Set(
     entries
       .filter(
@@ -220,8 +231,8 @@ export function generatePlan(entries: CoachEntry[]): CoachPlan {
       .map((e) => e.exercise_name.toLowerCase())
   );
 
-  const fresh = pool.filter((e) => !trained.has(e.name.toLowerCase()));
-  const chosen = (fresh.length >= 5 ? fresh : pool).slice(0, 5);
+  const fresh = usePool.filter((e) => !trained.has(e.name.toLowerCase()));
+  const chosen = (fresh.length >= 5 ? fresh : usePool.length > 0 ? usePool : CATALOG.filter((e) => e.group === focus)).slice(0, 5);
 
   const suggestions: Suggestion[] = chosen.map((ex) => {
     const prev = recentWeight(entries, ex.name);

@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, Brain, ScanLine, Sparkles, Target } from "lucide-react";
+import { ArrowRight, Brain, Ghost, MessageCircle, ScanLine, Sparkles, Target } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/glass-card";
 import { createClient } from "@/lib/supabase/server";
+import { isExerciseBlocked, parseInjuryFlags } from "@/lib/injury-coach";
 import { GROUP_LABELS, generatePlan, type CoachEntry } from "@/lib/ai-coach";
 
 export const metadata: Metadata = {
@@ -39,7 +40,19 @@ export default async function CoachPage() {
     }
   }
 
-  const plan = generatePlan(entries);
+  const { data: profile } = await supabase
+    .from("users")
+    .select("injury_flags")
+    .eq("id", user?.id ?? "")
+    .maybeSingle();
+
+  const injuries = parseInjuryFlags(profile?.injury_flags);
+  const avoidExercises = [
+    "Bench Press", "Back Squat", "Deadlift", "Overhead Press", "Pull Up",
+    "Romanian Deadlift", "Barbell Row", "Incline Dumbbell Press",
+  ].filter((name) => isExerciseBlocked(name, injuries));
+
+  const plan = generatePlan(entries, { avoidExercises });
   const totalSessions = (history ?? []).length;
 
   return (
@@ -57,34 +70,41 @@ export default async function CoachPage() {
         </p>
       </header>
 
-      <GlassCard className="mb-6 p-6" glow="blue">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div className="rounded-xl border border-white/10 bg-white/5 p-2">
-              <ScanLine className="size-5 text-apple-blue" />
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-widest text-white/40">
-                New
-              </p>
-              <p className="mt-1 text-xl font-semibold text-white">
-                AI Form Check
-              </p>
-              <p className="mt-1 max-w-xl text-sm text-white/60">
-                Upload a clip and our on-device pose engine grades your depth,
-                tempo and back angle in real time.
-              </p>
-            </div>
-          </div>
-          <Button
-            variant="primary"
-            render={<Link href="/coach/form-check" />}
-          >
-            Try it
-            <ArrowRight data-icon="inline-end" />
+      <section className="mb-6 grid gap-3 sm:grid-cols-3">
+        <GlassCard hover className="p-4">
+          <ScanLine className="mb-2 size-5 text-apple-blue" />
+          <p className="font-semibold text-white">Form Check</p>
+          <p className="mt-1 text-xs text-white/50">Video · reps · tempo · fatigue</p>
+          <Button variant="ghost" size="sm" className="mt-2" render={<Link href="/coach/form-check" />}>
+            Open <ArrowRight className="size-3" />
           </Button>
-        </div>
-      </GlassCard>
+        </GlassCard>
+        <GlassCard hover className="p-4">
+          <MessageCircle className="mb-2 size-5 text-apple-purple" />
+          <p className="font-semibold text-white">Coach Chat</p>
+          <p className="mt-1 text-xs text-white/50">Ask about plateaus & injuries</p>
+          <Button variant="ghost" size="sm" className="mt-2" render={<Link href="/coach/chat" />}>
+            Chat <ArrowRight className="size-3" />
+          </Button>
+        </GlassCard>
+        <GlassCard hover className="p-4">
+          <Ghost className="mb-2 size-5 text-white/80" />
+          <p className="font-semibold text-white">Ghost Rep</p>
+          <p className="mt-1 text-xs text-white/50">Race your past self</p>
+          <Button variant="ghost" size="sm" className="mt-2" render={<Link href="/coach/ghost" />}>
+            View <ArrowRight className="size-3" />
+          </Button>
+        </GlassCard>
+      </section>
+
+      {injuries.length > 0 && (
+        <GlassCard className="mb-6 p-4" glow="teal">
+          <p className="text-sm text-white/80">
+            Injury-aware mode: avoiding exercises stressing{" "}
+            <strong>{injuries.join(", ")}</strong>. Update in Profile.
+          </p>
+        </GlassCard>
+      )}
 
       <GlassCard className="mb-6 p-6" glow="purple">
         <div className="flex items-start gap-3">

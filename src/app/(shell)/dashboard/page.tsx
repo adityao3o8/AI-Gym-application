@@ -52,7 +52,7 @@ export default async function DashboardPage() {
   const [profileRes, workoutsRes, trophiesRes, recentRes] = await Promise.all([
     supabase
       .from("users")
-      .select("full_name, streak_count, last_workout_at")
+      .select("full_name, streak_count, last_workout_at, gym_cred, accountability_partner_id")
       .eq("id", userId)
       .maybeSingle(),
     supabase
@@ -72,6 +72,24 @@ export default async function DashboardPage() {
   ]);
 
   const profile = profileRes.data;
+  let partnerStreak: number | null = null;
+  let partnerName: string | null = null;
+  if (profile?.accountability_partner_id) {
+    const { data: partner } = await supabase
+      .from("users")
+      .select("full_name, streak_count, last_workout_at")
+      .eq("id", profile.accountability_partner_id)
+      .maybeSingle();
+    partnerStreak = partner?.streak_count ?? null;
+    partnerName = partner?.full_name ?? null;
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const partnerTrainedToday =
+      partner?.last_workout_at &&
+      new Date(partner.last_workout_at) >= yesterday;
+    if (!partnerTrainedToday) partnerStreak = partner?.streak_count ?? 0;
+  }
+
   const totalWorkouts = workoutsRes.count ?? workoutsRes.data?.length ?? 0;
   const trophyCount = trophiesRes.count ?? 0;
   const recent = recentRes.data ?? [];
@@ -98,7 +116,13 @@ export default async function DashboardPage() {
         streak: profile?.streak_count ?? 0,
         trophies: trophyCount,
         thisWeek,
+        gymCred: profile?.gym_cred ?? 0,
       }}
+      partner={
+        partnerName
+          ? { name: partnerName, streak: partnerStreak ?? 0 }
+          : null
+      }
       recent={recent.map((r) => ({
         id: r.id,
         title: r.title,

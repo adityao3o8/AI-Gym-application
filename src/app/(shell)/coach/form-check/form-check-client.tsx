@@ -24,14 +24,22 @@ import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/glass-card";
 import { cn } from "@/lib/utils";
 import {
+  logFormCheckWorkout,
+  saveGhostSession,
+} from "@/app/actions/features";
+import { exerciseDisplayName } from "@/lib/exercise-detect";
+import {
+  MIN_VISIBILITY,
   POSE_CONNECTIONS,
   computeFrameMetrics,
   createRepCounter,
+  resolveTrackingSide,
   summarize,
   type AnalysisResult,
   type Exercise,
   type FrameMetrics,
   type Landmark,
+  type RepConfidence,
 } from "@/lib/form-analyzer";
 
 type LoadState = "idle" | "loading-model" | "ready" | "error";
@@ -46,9 +54,11 @@ const EXERCISES: { id: Exercise; label: string; emoji: string }[] = [
 ];
 
 const MODEL_URL =
-  "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
+  "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task";
 const WASM_URL =
   "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
+/** Cap inference rate — fewer noisy samples = more stable rep counts. */
+const SAMPLE_INTERVAL_MS = 66;
 
 type PoseLandmarkerInstance = {
   detectForVideo: (
@@ -57,6 +67,55 @@ type PoseLandmarkerInstance = {
   ) => { landmarks: Landmark[][] };
   close: () => void;
 };
+
+const POSE_OPTIONS = {
+  runningMode: "VIDEO" as const,
+  numPoses: 1,
+  minPoseDetectionConfidence: 0.65,
+  minPosePresenceConfidence: 0.65,
+  minTrackingConfidence: 0.65,
+};
+
+async function createPoseLandmarker(): Promise<PoseLandmarkerInstance> {
+  const { FilesetResolver, PoseLandmarker } = await import(
+    "@mediapipe/tasks-vision"
+  );
+  const vision = await FilesetResolver.forVisionTasks(WASM_URL);
+
+  try {
+    const landmarker = await PoseLandmarker.createFromOptions(vision, {
+      baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
+      ...POSE_OPTIONS,
+    });
+    return landmarker as unknown as PoseLandmarkerInstance;
+  } catch {
+    const landmarker = await PoseLandmarker.createFromOptions(vision, {
+      baseOptions: { modelAssetPath: MODEL_URL, delegate: "CPU" },
+      ...POSE_OPTIONS,
+    });
+    return landmarker as unknown as PoseLandmarkerInstance;
+  }
+}
+
+function seekVideoToStart(video: HTMLVideoElement): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (video.currentTime <= 0.01) {
+      resolve();
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      video.removeEventListener("seeked", onSeeked);
+      reject(new Error("Video seek timed out"));
+    }, 4000);
+    const onSeeked = () => {
+      window.clearTimeout(timeout);
+      video.removeEventListener("seeked", onSeeked);
+      resolve();
+    };
+    video.addEventListener("seeked", onSeeked);
+    video.currentTime = 0;
+  });
+}
 
 export function FormCheckClient() {
   const [exercise, setExercise] = useState<Exercise>("squat");
@@ -72,7 +131,8 @@ export function FormCheckClient() {
     primary: number | null;
     secondary: number | null;
     visibility: number;
-  }>({ reps: 0, primary: null, secondary: null, visibility: 0 });
+    trackingPct: number;
+  }>({ reps: 0, primary: null, secondary: null, visibility: 0, trackingPct: 0 });
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -80,7 +140,11 @@ export function FormCheckClient() {
   const metricsRef = useRef<FrameMetrics[]>([]);
   const rafRef = useRef<number | null>(null);
   const lastTimestampRef = useRef<number>(-1);
+  const lastSampleRef = useRef<number>(-1);
   const counterRef = useRef<ReturnType<typeof createRepCounter> | null>(null);
+  const sideRef = useRef<"left" | "right" | null>(null);
+  const goodFrameCountRef = useRef(0);
+  const sessionRef = useRef(0);
 
   const exerciseLabel = useMemo(
     () => EXERCISES.find((e) => e.id === exercise)?.label ?? exercise,
@@ -93,29 +157,26 @@ export function FormCheckClient() {
     return { primary: "Elbow", secondary: "Elbow" };
   }, [exercise]);
 
-  const ensureModel = useCallback(async () => {
-    if (landmarkerRef.current) return landmarkerRef.current;
+  const disposeLandmarker = useCallback(() => {
+    if (!landmarkerRef.current) return;
+    try {
+      landmarkerRef.current.close();
+    } catch {
+      // MediaPipe can throw if already closed.
+    }
+    landmarkerRef.current = null;
+  }, []);
+
+  /** Fresh landmarker per run — detectForVideo requires monotonically increasing timestamps. */
+  const prepareLandmarker = useCallback(async () => {
+    disposeLandmarker();
     setLoadState("loading-model");
     setErrorMessage(null);
     try {
-      const { FilesetResolver, PoseLandmarker } = await import(
-        "@mediapipe/tasks-vision"
-      );
-      const vision = await FilesetResolver.forVisionTasks(WASM_URL);
-      const landmarker = await PoseLandmarker.createFromOptions(vision, {
-        baseOptions: {
-          modelAssetPath: MODEL_URL,
-          delegate: "GPU",
-        },
-        runningMode: "VIDEO",
-        numPoses: 1,
-        minPoseDetectionConfidence: 0.5,
-        minPosePresenceConfidence: 0.5,
-        minTrackingConfidence: 0.5,
-      });
-      landmarkerRef.current = landmarker as unknown as PoseLandmarkerInstance;
+      const landmarker = await createPoseLandmarker();
+      landmarkerRef.current = landmarker;
       setLoadState("ready");
-      return landmarkerRef.current;
+      return landmarker;
     } catch (err) {
       console.error("Failed to load pose model", err);
       setLoadState("error");
@@ -124,13 +185,20 @@ export function FormCheckClient() {
       );
       return null;
     }
+  }, [disposeLandmarker]);
+
+  const stopAnalysisLoop = useCallback(() => {
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
   }, []);
 
   useEffect(() => {
     return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      stopAnalysisLoop();
       if (videoUrl) URL.revokeObjectURL(videoUrl);
-      landmarkerRef.current?.close();
+      disposeLandmarker();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -151,7 +219,13 @@ export function FormCheckClient() {
       setResult(null);
       setRunState("idle");
       setErrorMessage(null);
-      setLiveMetrics({ reps: 0, primary: null, secondary: null, visibility: 0 });
+      setLiveMetrics({
+        reps: 0,
+        primary: null,
+        secondary: null,
+        visibility: 0,
+        trackingPct: 0,
+      });
     },
     [videoUrl]
   );
@@ -207,8 +281,14 @@ export function FormCheckClient() {
       setErrorMessage("Upload a video first.");
       return;
     }
-    const landmarker = await ensureModel();
+
+    stopAnalysisLoop();
+    video.pause();
+
+    const landmarker = await prepareLandmarker();
     if (!landmarker) return;
+
+    const session = ++sessionRef.current;
 
     setRunState("analyzing");
     setResult(null);
@@ -216,25 +296,49 @@ export function FormCheckClient() {
     metricsRef.current = [];
     counterRef.current = createRepCounter(exercise);
     lastTimestampRef.current = -1;
-    video.currentTime = 0;
+    lastSampleRef.current = -1;
+    sideRef.current = null;
+    goodFrameCountRef.current = 0;
     video.muted = true;
 
+    const failAnalysis = (message: string) => {
+      if (sessionRef.current !== session) return;
+      stopAnalysisLoop();
+      video.pause();
+      disposeLandmarker();
+      setErrorMessage(message);
+      setRunState("idle");
+    };
+
     const loop = () => {
-      if (!videoRef.current) return;
+      if (sessionRef.current !== session) return;
       const v = videoRef.current;
-      if (v.paused || v.ended) return;
-      const ts = v.currentTime * 1000;
+      if (!v || v.paused || v.ended) return;
+
+      const ts = Math.max(1, Math.round(v.currentTime * 1000));
       if (ts <= lastTimestampRef.current) {
         rafRef.current = requestAnimationFrame(loop);
         return;
       }
       lastTimestampRef.current = ts;
+
+      if (ts - lastSampleRef.current < SAMPLE_INTERVAL_MS) {
+        rafRef.current = requestAnimationFrame(loop);
+        return;
+      }
+      lastSampleRef.current = ts;
+
       try {
         const res = landmarker.detectForVideo(v, ts);
         const lm = res.landmarks?.[0] ?? null;
         drawOverlay(lm, v);
+
+        if (lm) {
+          sideRef.current = resolveTrackingSide(lm, exercise, sideRef.current);
+        }
+
         const m = lm
-          ? computeFrameMetrics(lm, ts, exercise)
+          ? computeFrameMetrics(lm, ts, exercise, sideRef.current ?? undefined)
           : {
               timestamp: ts,
               kneeAngle: null,
@@ -243,51 +347,77 @@ export function FormCheckClient() {
               elbowAngle: null,
               visibility: 0,
             };
+
         metricsRef.current.push(m);
+        if (m.visibility >= MIN_VISIBILITY) {
+          goodFrameCountRef.current += 1;
+        }
+
         const reps = counterRef.current?.update(m) ?? 0;
         const primary =
           exercise === "squat"
             ? m.kneeAngle
             : exercise === "deadlift"
-            ? m.hipAngle
-            : m.elbowAngle;
+              ? m.hipAngle
+              : m.elbowAngle;
         const secondary =
           exercise === "squat" || exercise === "deadlift"
             ? m.backAngleDeg
             : m.elbowAngle;
+        const totalSampled = metricsRef.current.length;
         setLiveMetrics({
           reps,
           primary,
           secondary,
           visibility: m.visibility,
+          trackingPct:
+            totalSampled > 0
+              ? Math.round((goodFrameCountRef.current / totalSampled) * 100)
+              : 0,
         });
       } catch (err) {
         console.error("detect failed", err);
+        failAnalysis(
+          "Analysis stopped — the pose tracker couldn't process this replay. Click Analyze to try again."
+        );
+        return;
       }
       rafRef.current = requestAnimationFrame(loop);
     };
 
     const onEnded = () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (sessionRef.current !== session) return;
+      stopAnalysisLoop();
       const summary = summarize(exercise, metricsRef.current);
       setResult(summary);
       setRunState("done");
-      video.removeEventListener("ended", onEnded);
+      disposeLandmarker();
     };
-    video.addEventListener("ended", onEnded, { once: true });
 
     try {
+      await seekVideoToStart(video);
+      if (sessionRef.current !== session) return;
+      video.addEventListener("ended", onEnded, { once: true });
       await video.play();
+      if (sessionRef.current !== session) return;
       rafRef.current = requestAnimationFrame(loop);
     } catch (err) {
       console.error("play failed", err);
-      setErrorMessage("Couldn't start video playback. Try again.");
-      setRunState("idle");
+      failAnalysis("Couldn't start video playback. Try again.");
     }
-  }, [drawOverlay, ensureModel, exercise, videoUrl]);
+  }, [
+    disposeLandmarker,
+    drawOverlay,
+    exercise,
+    prepareLandmarker,
+    stopAnalysisLoop,
+    videoUrl,
+  ]);
 
   const resetAnalysis = useCallback(() => {
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    sessionRef.current += 1;
+    stopAnalysisLoop();
+    disposeLandmarker();
     const v = videoRef.current;
     if (v) {
       v.pause();
@@ -295,12 +425,17 @@ export function FormCheckClient() {
     }
     setResult(null);
     setRunState("idle");
-    setLiveMetrics({ reps: 0, primary: null, secondary: null, visibility: 0 });
+    setErrorMessage(null);
+    setLiveMetrics({
+      reps: 0,
+      primary: null,
+      secondary: null,
+      visibility: 0,
+      trackingPct: 0,
+    });
     const canvas = canvasRef.current;
     canvas?.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
-  }, []);
-
-  const visibilityPct = Math.round((liveMetrics.visibility ?? 0) * 100);
+  }, [disposeLandmarker, stopAnalysisLoop]);
 
   return (
     <div className="relative mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
@@ -313,8 +448,8 @@ export function FormCheckClient() {
           Get instant <span className="gradient-text">feedback</span> on your form
         </h1>
         <p className="mt-2 max-w-2xl text-white/60">
-          Upload a side-view clip and our on-device pose engine tracks every joint
-          to coach you in real time. Nothing leaves your browser.
+          Upload a side-view clip. Pose tracking runs entirely in your browser —
+          reps and form tips include a confidence score so you know when the read is reliable.
         </p>
       </header>
 
@@ -340,7 +475,7 @@ export function FormCheckClient() {
                   {videoUrl ? "Replace video" : "Upload video"}
                 </span>
               </label>
-              {videoUrl && runState !== "analyzing" && (
+              {videoUrl && runState === "idle" && (
                 <Button
                   variant="primary"
                   size="default"
@@ -366,9 +501,15 @@ export function FormCheckClient() {
                 </Button>
               )}
               {runState === "done" && (
-                <Button variant="ghost" onClick={resetAnalysis}>
-                  Reset
-                </Button>
+                <>
+                  <Button variant="primary" onClick={startAnalysis}>
+                    <Play className="size-4" />
+                    Analyze again
+                  </Button>
+                  <Button variant="ghost" onClick={resetAnalysis}>
+                    Reset
+                  </Button>
+                </>
               )}
             </div>
           </div>
@@ -403,7 +544,7 @@ export function FormCheckClient() {
                       <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-apple-blue/70" />
                       <span className="relative inline-flex size-2 rounded-full bg-apple-blue" />
                     </span>
-                    Analyzing live · pose {visibilityPct}%
+                    Analyzing · tracking {liveMetrics.trackingPct}%
                   </div>
                 )}
               </>
@@ -527,7 +668,15 @@ export function FormCheckClient() {
                 className="mt-3 space-y-3"
               >
                 <div className="grid grid-cols-3 gap-2 text-center">
-                  <SummaryCell label="Reps" value={result.reps.toString()} />
+                  <SummaryCell
+                    label="Reps"
+                    value={result.reps.toString()}
+                    sub={
+                      result.repConfidence !== "high"
+                        ? confidenceLabel(result.repConfidence)
+                        : undefined
+                    }
+                  />
                   <SummaryCell
                     label={result.summary.primaryLabel}
                     value={result.summary.primaryValue}
@@ -537,9 +686,27 @@ export function FormCheckClient() {
                     value={result.summary.secondaryValue}
                   />
                 </div>
+                <div className="grid grid-cols-2 gap-2 text-center">
+                  <SummaryCell
+                    label="Form score"
+                    value={`${result.formScore}%`}
+                  />
+                  <SummaryCell label="Tempo" value={result.tempo.label} />
+                </div>
+                {result.detectedExercise &&
+                  result.detectedExercise !== result.exercise && (
+                    <p className="text-xs text-amber-200/90">
+                      Auto-detected: {exerciseDisplayName(result.detectedExercise)} —
+                      you selected {exerciseDisplayName(result.exercise)}.
+                    </p>
+                  )}
+                <ConfidenceBar
+                  quality={result.trackingQuality}
+                  confidence={result.repConfidence}
+                />
                 <p className="text-[11px] text-white/40">
-                  {result.framesWithPose} / {result.totalFrames} frames had a
-                  clean read on your body.
+                  {result.framesWithPose} / {result.totalFrames} frames tracked
+                  reliably ({Math.round(result.trackingQuality * 100)}%).
                 </p>
                 <ul className="space-y-2">
                   {result.tips.map((t) => (
@@ -564,6 +731,29 @@ export function FormCheckClient() {
                     </li>
                   ))}
                 </ul>
+                <div className="flex flex-wrap gap-2 border-t border-white/10 pt-3">
+                  <form action={logFormCheckWorkout}>
+                    <input type="hidden" name="exercise" value={exerciseDisplayName(result.exercise)} />
+                    <input type="hidden" name="reps" value={result.reps} />
+                    <input type="hidden" name="form_score" value={result.formScore} />
+                    <Button type="submit" variant="primary" size="sm">
+                      Log to workouts
+                    </Button>
+                  </form>
+                  <form action={saveGhostSession}>
+                    <input type="hidden" name="exercise" value={result.exercise} />
+                    <input type="hidden" name="reps" value={result.reps} />
+                    <input type="hidden" name="form_score" value={result.formScore} />
+                    <input
+                      type="hidden"
+                      name="metrics_json"
+                      value={JSON.stringify(result.metrics.slice(0, 120))}
+                    />
+                    <Button type="submit" variant="ghost" size="sm">
+                      Save as Ghost
+                    </Button>
+                  </form>
+                </div>
               </motion.div>
             )}
           </GlassCard>
@@ -603,13 +793,60 @@ function MetricChip({
   );
 }
 
-function SummaryCell({ label, value }: { label: string; value: string }) {
+function confidenceLabel(c: RepConfidence) {
+  if (c === "high") return "High confidence";
+  if (c === "medium") return "Estimate";
+  return "Low confidence";
+}
+
+function ConfidenceBar({
+  quality,
+  confidence,
+}: {
+  quality: number;
+  confidence: RepConfidence;
+}) {
+  const pct = Math.round(quality * 100);
+  const barColor =
+    confidence === "high"
+      ? "bg-emerald-400"
+      : confidence === "medium"
+        ? "bg-amber-400"
+        : "bg-red-400";
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5">
+      <div className="flex items-center justify-between text-[10px] uppercase tracking-widest text-white/40">
+        <span>Tracking quality</span>
+        <span>{confidenceLabel(confidence)}</span>
+      </div>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+        <div
+          className={cn("h-full rounded-full transition-all", barColor)}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function SummaryCell({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+}) {
   return (
     <div className="rounded-xl border border-white/10 bg-white/5 px-2 py-2">
       <p className="text-[10px] uppercase tracking-widest text-white/40">
         {label}
       </p>
       <p className="mt-1 text-base font-semibold text-white">{value}</p>
+      {sub ? (
+        <p className="mt-0.5 text-[10px] text-white/45">{sub}</p>
+      ) : null}
     </div>
   );
 }
