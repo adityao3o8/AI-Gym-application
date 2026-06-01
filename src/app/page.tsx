@@ -31,7 +31,7 @@ const TRUSTED_BY = [
 export default function HomePage() {
   return (
     <div className="font-inter relative isolate min-h-screen overflow-hidden text-white antialiased">
-      <BackgroundVideo />
+      <BackgroundVideo src="https://stream.mux.com/NcU3HlHeF7CUL86azTTzpy3Tlb00d6iF3BmCdFslMJYM.m3u8" />
 
       {/* Top nav */}
       <header className="relative z-30 mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-5 sm:px-8">

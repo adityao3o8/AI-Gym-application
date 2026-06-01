@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowRight, CheckCircle2 } from "lucide-react";
+import { AlertCircle, ArrowRight, CheckCircle2, MailCheck } from "lucide-react";
 
+import { resendConfirmation } from "@/app/actions/auth";
 import { AnimatedBg } from "@/components/ui/animated-bg";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/glass-card";
@@ -16,11 +17,28 @@ type LoginPageProps = {
   searchParams: Promise<{
     error?: string;
     message?: string;
+    email?: string;
   }>;
 };
 
+// Supabase returns these messages when the email isn't confirmed yet.
+// "Invalid login credentials" is deliberately vague to avoid leaking
+// which emails exist — but in our flow it almost always means
+// "confirmed email is missing".
+function looksLikeUnconfirmed(err: string | undefined) {
+  if (!err) return false;
+  const v = err.toLowerCase();
+  return (
+    v.includes("invalid login credentials") ||
+    v.includes("email not confirmed") ||
+    v.includes("not confirmed")
+  );
+}
+
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const params = await searchParams;
+  const presetEmail = params.email ?? "";
+  const unconfirmed = looksLikeUnconfirmed(params.error);
 
   async function login(formData: FormData) {
     "use server";
@@ -39,7 +57,11 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
     });
 
     if (error) {
-      redirect(`/login?error=${encodeURIComponent(error.message)}`);
+      // Preserve the email in the URL so we can default it back into
+      // the input and pre-fill the resend-confirmation form.
+      redirect(
+        `/login?error=${encodeURIComponent(error.message)}&email=${encodeURIComponent(email.trim())}`
+      );
     }
 
     redirect("/dashboard");
@@ -90,7 +112,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
                 type="email"
                 required
                 autoComplete="email"
-                className="h-11 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white placeholder:text-white/30 focus-visible:border-blue-500/50 focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                defaultValue={presetEmail}
+                className="h-11 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white placeholder:text-white/30 focus-visible:border-apple-blue/50 focus-visible:ring-2 focus-visible:ring-apple-blue/50"
               />
             </div>
             <div className="space-y-2">
@@ -103,24 +126,61 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
                 type="password"
                 required
                 autoComplete="current-password"
-                className="h-11 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white placeholder:text-white/30 focus-visible:border-blue-500/50 focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                className="h-11 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white placeholder:text-white/30 focus-visible:border-apple-blue/50 focus-visible:ring-2 focus-visible:ring-apple-blue/50"
               />
             </div>
+
             {params.message ? (
-              <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
-                {params.message}
+              <p className="flex items-start gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
+                <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
+                <span>{params.message}</span>
               </p>
             ) : null}
-            {params.error ? (
-              <p className="animate-pulse rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">
-                {params.error}
+
+            {params.error && !unconfirmed ? (
+              <p className="flex items-start gap-2 rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+                <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                <span>{params.error}</span>
               </p>
             ) : null}
+
             <Button className="h-11 w-full rounded-xl" variant="primary" type="submit">
               Log in
               <ArrowRight data-icon="inline-end" />
             </Button>
           </form>
+
+          {unconfirmed ? (
+            <div className="mt-5 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4">
+              <div className="flex items-start gap-2">
+                <MailCheck className="mt-0.5 size-4 shrink-0 text-amber-300" />
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-amber-100">
+                    Your email isn&apos;t confirmed yet.
+                  </p>
+                  <p className="text-xs text-amber-100/80">
+                    Supabase sent a confirmation link when you signed up.
+                    Click that link from your inbox, or resend it below.
+                  </p>
+                </div>
+              </div>
+              <form action={resendConfirmation} className="mt-3">
+                <input type="hidden" name="email" value={presetEmail} />
+                <Button
+                  type="submit"
+                  size="sm"
+                  variant="ghost"
+                  className="w-full rounded-lg"
+                  disabled={!presetEmail}
+                >
+                  {presetEmail
+                    ? `Resend confirmation to ${presetEmail}`
+                    : "Enter your email above first"}
+                </Button>
+              </form>
+            </div>
+          ) : null}
+
           <p className="mt-5 text-center text-sm text-white/60">
             No account?{" "}
             <Link href="/signup" className="font-medium text-white hover:text-apple-blue">
